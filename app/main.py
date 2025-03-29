@@ -32,28 +32,35 @@ class SoilInput(BaseModel):
 @app.post("/predict")
 def predict(input: SoilInput):
     try:
-        # Scale input
-        scaled_input = scaler.transform([[input.n, input.p, input.k, input.ph]])
+        # 1. Prepare input array
+        input_array = np.array([
+            [input.n_effect, input.p_effect, input.k_effect, input.ph_effect]
+        ])
         
-        # Predict
-        prediction = model.predict(scaled_input)[0]
-        crop_name = encoder.inverse_transform([prediction])[0]
+        # 2. Scale features
+        scaled_input = scaler.transform(input_array)
         
-        # Get probabilities (if available)
-        try:
-            proba = model.predict_proba(scaled_input)[0]
-            confidence = float(np.max(proba))
-        except:
-            confidence = None
-            
-        return {
-            "crop": crop_name,
-            "confidence": confidence,
-            "error": None
-        }
+        # 3. Get probabilities for all classes
+        probabilities = model.predict_proba(scaled_input)[0]
         
+        # 4. Get top 3 crop indices (sorted descending)
+        top_3_indices = np.argsort(probabilities)[-3:][::-1]
+        
+        # 5. Prepare response
+        results = []
+        for idx in top_3_indices:
+            crop_name = encoder.inverse_transform([idx])[0]
+            suitability = float(probabilities[idx] * 100)  # Convert to percentage
+        
+            results.append({
+                "crop": crop_name,
+                "suitability": round(suitability, 2)  # Rounds to 2 decimal places
+            })
+        
+        return {"predictions": results}
+    
     except Exception as e:
-        return {"crop": None, "error": str(e)}
+        return {"error": str(e)}
 
 @app.get("/")
 def health_check():
